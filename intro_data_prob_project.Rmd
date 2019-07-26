@@ -1,0 +1,211 @@
+---
+title: "Exploring the BRFSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+### Load data
+
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+BRFSS(Behavioral Risk Factor Surveillance System) is a national level health survey conducted in the United States. The dataset we will be working on is the survey results from 2013.
+
+**Generalizability:**
+In my opinion, results of BRFSS would be generalizable because:
+1. High number of samples
+2. Random sampling
+3. Stratified sampling due to picking people to survey for each state
+
+Prone to the following biases:
+1. Don't know/ refused to answer may introduce bias
+2. Non-phone users weren't surveyed
+* * *
+
+**Causality**
+Causality cannot be established since only random sampling was used.
+Causality can only be established if random assignment is used.
+Blocking also was not done for various biases.
+
+Thus, we can establish correlation between variables but not causation.
+BRFSS is thus an observational study.
+
+## Part 2: Research questions
+
+**Research quesion 1:**
+Are alcohol and tobacco use correlated?
+
+**Research quesion 2:**
+How does education level influence income?
+
+**Research quesion 3:**
+How much correlation is there between exercise duration/frequency and general health for males and females? Does it differ by sex?
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+**Research quesion 1:**
+Variables used:
+smokday2: Frequency Of Days Now Smoking
+usenow3: Use Of Smokeless Tobacco Products
+avedrnk2: Avg Alcoholic Drinks Per Day In Past 30
+
+Let us first filter out our dataset and keep only those values which do not have NA in the variables we will use for analysis
+
+```{r}
+brfss_alc_tob <- brfss2013 %>%
+  filter(!is.na(smokday2),!is.na(usenow3),!is.na(avedrnk2))
+```
+
+Using mutate, a new variable is created to store tobacco use. It stores the min value among smokday2 and usenow3 for each entry in the data set. This operation is valid because both of them are ordinal variables. Min is used since 1 = Every day, 2= Some days, 3=Not at all.
+Thus tobacco use would be everyday if even one of the two products are used everyday. Similar for 'some days' and 'not at all'
+
+```{r}
+brfss_alc_tob <- brfss_alc_tob %>%
+  mutate(t_use = pmin(as.numeric(smokday2),as.numeric(usenow3))) %>%
+  mutate(t_use = factor(t_use))
+```
+
+Let us now visualise alcohol consumption for each of the categories of tobacco consumption using boxplots. We remove the top 1% values which are extreme outliers to get a better visualization.
+
+```{r}
+plot <- ggplot(brfss_alc_tob, aes(x = t_use, y = avedrnk2))+
+  geom_boxplot()+
+  scale_y_continuous(limits = quantile(brfss_alc_tob$avedrnk2, c(0,0.99)))
+plot
+```
+
+It can be observed that tobacco use and alcohol use do not appear to be highly correlated due to the fact that there is no sharp increase or decrease in average alcohol consumption across all three categories of tobacco users. Although some correlation can be observed by the fact that IQRs tend to go lower as tobacco use decreases.
+
+Summarising for smokday2 using n()
+```{r}
+brfss_alc_tob %>% 
+  group_by(smokday2) %>% 
+  summarise(count = n())
+
+```
+Summarising for usenow3 using n()
+```{r}
+brfss_alc_tob %>% 
+  group_by(usenow3) %>% 
+  summarise(count = n())
+```
+Summarising for t_use using n() [1 = Every day, 2=Some days, 3=Never]
+```{r}
+brfss_alc_tob %>% 
+  group_by(t_use) %>% 
+  summarise(count = n())
+```
+
+Summarising for avedrnk2 using mean(), median()
+```{r}
+brfss_alc_tob %>%
+  summarise(mean = mean(avedrnk2),median = median(avedrnk2))
+```
+
+
+**Research quesion 2:**
+Variables used:
+_educag: Computed Level Of Education Completed Categories
+_incomg: Computed Income Categories
+
+X_educag [R automatic renaming because of _ in the beginning]
+X_incomg [R automatic renaming because of _ in the beginning]
+
+First we filter out the NA values
+```{r}
+edu_data <- brfss2013%>%
+  filter(!is.na(X_educag),!is.na(X_incomg))
+```
+
+
+Now we plot a bar graph using fill as incomg so as to understand the proportion of various incomegroups across various educational groups
+```{r}
+edu_plot <- ggplot(data=edu_data, aes(x=X_educag, fill=X_incomg)) + 
+  geom_bar() + 
+  scale_x_discrete(labels = c("Did not graduate high school"="NonHS", "Graduated high school" = "HS", "Attended college or technical school"="NonCol", "Graduated from college or technical school"="Col")) + 
+  xlab("Education Level") + 
+  ylab("Count")
+
+edu_plot
+```
+
+The above plot helps show a strong correlation between education levels and income levels. This can be easily observed from the fact that the majority of college graduates earn more than 50,000$.
+
+Summarizing across various educational groups we get
+```{r}
+edu_data%>%
+  group_by(X_educag)%>%
+  summarise(mean = mean(as.numeric(X_incomg)),median = median(as.numeric(X_incomg)))
+```
+Here numbers 1-5 correspond to:
+1	"Less than $15,000"
+2	"$15,000 to less than $25,000"
+3	"$25,000 to less than $35,000"
+4 "$35,000 to less than $50,000"
+5 "$50,000 or more"
+
+**Research quesion 3:**
+Variables used:
+genhlth: General Health
+exeroft1: How Many Times Walking, Running, Jogging, Or Swimming
+sex: Respondents Sex
+
+Let's filter out the data set. For this data we will only consider weekly exercise (this is done by taking values less than 200, as values in 100s represent times per week, values in 200s represent times per month)
+```{r}
+brfss_genex <- brfss2013 %>%
+  filter(!is.na(sex),!is.na(genhlth),!is.na(exeroft1), 100 <= exeroft1, exeroft1 < 200)
+```
+
+Plotting graph:
+We remove the top 0.5% of the values since these are extreme outliers who exercise more than ~20 times every week
+```{r}
+genex_plt <- ggplot(brfss_genex, aes( genhlth, exeroft1))+
+  geom_boxplot()+
+  facet_grid(. ~sex)+
+  scale_y_continuous(limits = quantile(brfss_genex$exeroft1, c(0,0.995)))
+genex_plt
+```
+General health does not appear to differ across genders by number of times of exercise per week. This may be due to the fact that weekly exercise is healthy and helps achieve a baseline health level, leaving general health to be decided by other factors like food, sleep and lifestyle habits which are likely similar across the genders.
+
+The plot looks very similar for both males and females.
+
+Perhaps we could see if monthly exercisers see a greater difference across genders by applying the same procedure to monthly exercisers.
+```{r}
+brfss_genex1 <- brfss2013 %>%
+  filter(!is.na(sex),!is.na(genhlth),!is.na(exeroft1),exeroft1 >= 200)
+genex_plt1 <- ggplot(brfss_genex1, aes( genhlth, exeroft1))+
+  geom_boxplot()+
+  facet_grid(. ~sex)+
+  scale_y_continuous(limits = quantile(brfss_genex1$exeroft1, c(0,1)))
+genex_plt1
+```
+
+In this set also, there seems to be no significant difference between males and females.
+
+```{r}
+summ <- select(brfss2013, genhlth, exeroft1, sex) %>%
+  filter(!is.na(sex),!is.na(genhlth),!is.na(exeroft1))
+summary(summ)
+```
+
